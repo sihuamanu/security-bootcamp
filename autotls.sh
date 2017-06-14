@@ -12,7 +12,7 @@ EOF
 ))
 $JAVA_HOME/keytool -importcert -file rootCA.pem -alias rootca -keystore truststore.jks -storepass ${password} -noprompt
 cp rootCA.pem truststore.pem
-
+/usr/java/jdk1.7.0_67-cloudera/bin/keytool -importcert -file rootCA.pem -alias rootca -keystore $JAVA_HOME/jre/lib/security/jssecacerts -storepass changeit -noprompt
 for i in $nodes ;do
     openssl genrsa -aes256 -passout pass:${password} -out $i.key 4096
     openssl req -new -sha256 -passin pass:${password} -key $i.key -out $i.csr -subj "/C=US/ST=CA/L=Palo Alto/O=Cloudera/OU=Dev Cluster/CN=$i"
