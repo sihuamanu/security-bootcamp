@@ -11,3 +11,5 @@ service nscd start
 service sssd restart
 
 curl -u admin:admin "https://security-bootcamp-1.gce.cloudera.com:7183/api/v13/cm/deployment" --cacert /opt/cloudera/security/x509/truststore.pem > cm-deployment.json
+
+openssl s_client -verify 100 -showcerts -CAfile <(keytool -list -rfc -keystore /opt/cloudera/security/jks/truststore.jks -storepass <password>) -connect keytrustee_kms_host:16000
