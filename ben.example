@@ -1,0 +1,52 @@
+#!/bin/bash
+
+JAVA_HOME=/usr/java/jdk1.7.0_67-cloudera
+export JAVA_HOME
+export PATH=${PATH}:${JAVA_HOME}/bin
+
+#################################################################
+HOST_LIST=hosts.txt
+CA_PASS=cloudera
+KEYSTORE_PASS=cloudera
+TRUSTSTORE_PASS=changeit
+SUBJECT_PREFIX="/C=US/ST=CA/L=Palo Alto/O=Cloudera/OU=Dev Cluster"
+CA_SUBJ="CN=Dev Cluster Certificate Authority"
+CERT_VALIDITY=1095
+OPENSSL_CONF=/etc/pki/tls/openssl.cnf
+#################################################################
+
+rm -f rootCA.key rootCA.pem
+openssl genrsa -out rootCA.key -aes256 -passout pass:${CA_PASS} 4096
+openssl req -x509 -new -nodes -key rootCA.key -passin pass:${KEYSTORE_PASS} -sha256 -days 3650 -out rootCA.pem -subj "${SUBJECT_PREFIX}/${CA_SUBJ}" -extensions v3ext -config <(cat ${OPENSSL_CONF} <(
+cat <<-EOF
+[v3ext]
+basicConstraints = critical,CA:TRUE, pathlen:1
+keyUsage = critical, keyCertSign, cRLSign
+EOF
+))
+
+for HOST in $(cat ${HOST_LIST});
+do
+  rm -f ${HOST}.key ${HOST}.csr ${HOST}.pem ${HOST}.pfx ${HOST}.jks
+  openssl genrsa -out ${HOST}.key -aes256 -passout pass:${KEYSTORE_PASS} 4096
+  openssl req -new -sha256 -key ${HOST}.key -passin pass:${KEYSTORE_PASS} -out ${HOST}.csr -subj "${SUBJECT_PREFIX}/CN=${HOST}"
+  openssl x509 -req -sha256 -extensions v3ext -in ${HOST}.csr -CA rootCA.pem -CAkey rootCA.key -passin pass:${CA_PASS} -CAcreateserial -out ${HOST}.pem -days ${CERT_VALIDITY} -extfile <(
+cat <<-EOF
+[v3ext]
+basicConstraints = CA:FALSE
+subjectAltName = DNS:${HOST}
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+EOF
+)
+
+  openssl pkcs12 -export -in ${HOST}.pem -inkey ${HOST}.key -passin pass:${KEYSTORE_PASS} -out ${HOST}.pfx -passout pass:${KEYSTORE_PASS}
+  rm -f ${HOST}.jks
+  keytool -importkeystore -destkeystore ${HOST}.jks -srckeystore ${HOST}.pfx -srcstoretype PKCS12 -srcstorepass ${KEYSTORE_PASS} -deststorepass ${KEYSTORE_PASS}
+done
+
+rm -f truststore.jks ${JAVA_HOME}/jre/lib/security/jssecacerts
+keytool -importcert -file rootCA.pem -noprompt -alias devclusterca -keystore truststore.jks -storepass ${TRUSTSTORE_PASS}
+cp -f ${JAVA_HOME}/jre/lib/security/cacerts ${JAVA_HOME}/jre/lib/security/jssecacerts
+keytool -importcert -file rootCA.pem -noprompt -alias devclusterca -keystore ${JAVA_HOME}/jre/lib/security/jssecacerts -storepass ${TRUSTSTORE_PASS}
+cp -f rootCA.pem truststore.pem
